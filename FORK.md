@@ -22,7 +22,7 @@ One commit on top of the upstream release tag, touching 6 files:
 | file | change |
 |---|---|
 | `promql/engine.go` | adds the `NodeReplacer` field to `Engine`; `FindMinMaxTime` becomes the method `(*Engine).findMinMaxTime`; `newQuery`/`populateSeries` propagate errors; range tracking made safe for a parallel tree walk |
-| `promql/parser/ast.go` | `parser.Inspect` gains a `context.Context`, takes an `*EvalStmt`, returns an error, and accepts a `NodeReplacer`; adds the `NodeReplacer` type |
+| `promql/parser/ast.go` | `parser.Inspect` gains a `context.Context`, takes an `*EvalStmt`, returns an error, and accepts a `NodeReplacer`; adds the `NodeReplacer` type; `Walk` may visit children in parallel, `Inspect` never does |
 | `promql/engine_extra.go` | new file: per-selector `LookbackDelta` support |
 | `promql/info.go` | call-site updates for the new `Inspect` signature |
 | `promql/promqltest/test.go` | call-site updates |

@@ -337,7 +337,16 @@ type Visitor interface {
 // invoked recursively with visitor w for each of the non-nil children of node,
 // followed by a call of w.Visit(nil), returning an error
 // As the tree is descended the path of previous nodes is provided.
+//
+// Without a NodeReplacer the children of a node may be visited concurrently,
+// so v must be safe for concurrent use.
 func Walk(ctx context.Context, v Visitor, s *EvalStmt, node Node, path []Node, nr NodeReplacer) (Node, error) {
+	return walk(ctx, v, s, node, path, nr, true)
+}
+
+// walk implements Walk. parallel says whether children may be fanned out to
+// goroutines; Inspect passes false, see the comment there.
+func walk(ctx context.Context, v Visitor, s *EvalStmt, node Node, path []Node, nr NodeReplacer, parallel bool) (Node, error) {
 	// Check if the context is closed already
 	select {
 	case <-ctx.Done():
@@ -369,33 +378,40 @@ func Walk(ctx context.Context, v Visitor, s *EvalStmt, node Node, path []Node, n
 	// PositionRange / Children reads on shared parents.
 	//
 	// When there is no NodeReplacer the visit is read-only: we don't need
-	// SetChild at all and can fan out children to goroutines for the I/O
-	// parallelism that promxy depends on (e.g. populateSeries firing one
-	// downstream HTTP request per VectorSelector).
+	// SetChild at all and, if parallel, can fan out children to goroutines
+	// for the I/O parallelism that promxy depends on (e.g. populateSeries
+	// firing one downstream HTTP request per VectorSelector).
 	children := Children(node)
 	if nr != nil {
 		for i, e := range children {
-			childNode, err := Walk(ctx, v, s, e, path, nr)
+			childNode, err := walk(ctx, v, s, e, path, nr, parallel)
 			if err != nil {
 				return node, err
 			}
 			SetChild(node, i, childNode)
 		}
-	} else if len(children) == 1 {
-		// Single-child fast path: avoid spawning a goroutine for the
-		// linear chains (UnaryExpr / ParenExpr / StepInvariantExpr /
-		// MatrixSelector) that dominate AST shapes.
-		if _, err := Walk(ctx, v, s, children[0], path, nr); err != nil {
-			return node, err
+	} else if !parallel || len(children) == 1 {
+		// Sequential visit. Also the single-child fast path: avoid
+		// spawning a goroutine for the linear chains (UnaryExpr /
+		// ParenExpr / StepInvariantExpr / MatrixSelector) that dominate
+		// AST shapes.
+		for _, e := range children {
+			if _, err := walk(ctx, v, s, e, path, nr, parallel); err != nil {
+				return node, err
+			}
 		}
 	} else {
+		// Only reachable from Walk, whose callers pass a visitor that
+		// guards its own shared state. Inspect never gets here: its
+		// visitor is an arbitrary closure with no way to opt out of
+		// concurrency.
 		wg := &sync.WaitGroup{}
 		errs := make([]error, len(children))
 		for i, e := range children {
 			wg.Add(1)
 			go func(i int, e Node) {
 				defer wg.Done()
-				if _, childErr := Walk(ctx, v, s, e, append([]Node{}, path...), nr); childErr != nil {
+				if _, childErr := walk(ctx, v, s, e, append([]Node{}, path...), nr, parallel); childErr != nil {
 					errs[i] = childErr
 				}
 			}(i, e)
@@ -442,9 +458,13 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
+//
+// The traversal is always sequential: f is an arbitrary closure that may write
+// state shared across nodes, and it has no way to ask for a sequential walk.
+// Callers that want the parallel fan-out use Walk directly.
 func Inspect(ctx context.Context, s *EvalStmt, f inspector, nr NodeReplacer) (Node, error) {
 	//nolint: errcheck
-	return Walk(ctx, inspector(f), s, s.Expr, nil, nr)
+	return walk(ctx, inspector(f), s, s.Expr, nil, nr, false)
 }
 
 func SetChild(node Node, i int, child Node) {
