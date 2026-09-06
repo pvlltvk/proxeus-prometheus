@@ -669,16 +669,14 @@ func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, err
 	return listener, nil
 }
 
-// Run serves the HTTP endpoints.
-func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig string) error {
-	if len(listeners) == 0 {
-		var err error
-		listeners, err = h.Listeners()
-		if err != nil {
-			return err
-		}
-	}
-
+// HTTPHandler returns the handler Run serves: the web router plus the API v1
+// router mounted under the route prefix, without the HTTP server, the
+// TLS/web-config machinery or the tracing wrappers. It exists so the handler can
+// be embedded in another server.
+//
+// It registers the API v1 routes and so must be called at most once per Handler.
+// Do not combine it with Run on the same Handler.
+func (h *Handler) HTTPHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", h.router)
 
@@ -694,6 +692,19 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 
+	return mux
+}
+
+// Run serves the HTTP endpoints.
+func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig string) error {
+	if len(listeners) == 0 {
+		var err error
+		listeners, err = h.Listeners()
+		if err != nil {
+			return err
+		}
+	}
+
 	errlog := slog.NewLogLogger(h.logger.Handler(), slog.LevelError)
 
 	spanNameFormatter := otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
@@ -701,7 +712,7 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 	})
 
 	httpSrv := &http.Server{
-		Handler:     withStackTracer(otelhttp.NewHandler(mux, "", spanNameFormatter), h.logger),
+		Handler:     withStackTracer(otelhttp.NewHandler(h.HTTPHandler(), "", spanNameFormatter), h.logger),
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
