@@ -17,17 +17,20 @@ Upstream has no such extension point.
 
 ## What is patched
 
-A short patch series on top of the upstream release tag, touching 7 files:
+A short patch series on top of the upstream release tag, touching 8 files:
 
 | file | change |
 |---|---|
-| `promql/engine.go` | adds the `NodeReplacer` field to `Engine`; `FindMinMaxTime` becomes the method `(*Engine).findMinMaxTime`; `newQuery`/`populateSeries` propagate errors; range tracking made safe for a parallel tree walk |
-| `promql/parser/ast.go` | `parser.Inspect` gains a `context.Context`, takes an `*EvalStmt`, returns an error, and accepts a `NodeReplacer`; adds the `NodeReplacer` type; `Walk` may visit children in parallel, `Inspect` never does |
-| `promql/engine_extra.go` | new file: per-selector `LookbackDelta` support |
-| `promql/info.go` | call-site updates for the new `Inspect` signature |
+| `promql/engine.go` | adds the `NodeReplacer` field to `Engine`; `FindMinMaxTime` becomes the method `(*Engine).findMinMaxTime`; `newQuery`/`populateSeries` propagate errors; range tracking made safe for a parallel tree walk; the per-step sample lookup honours a selector's own `LookbackDelta` |
+| `promql/parser/ast.go` | `parser.Inspect` gains a `context.Context`, takes an `*EvalStmt`, returns an error, and accepts a `NodeReplacer`; adds the `NodeReplacer` type; `Walk` may visit children in parallel, `Inspect` never does; adds `VectorSelector.LookbackDelta` and `GetLookbackDelta` |
+| `promql/engine_extra.go` | new file: `evalRange` tracking, kept out of `engine.go` to shrink the rebase surface |
+| `promql/info.go` | call-site updates for the new `Inspect` signature and the `evalSeries` lookback delta argument |
 | `promql/promqltest/test.go` | call-site updates |
+| `promql/durations_test.go` | call-site updates |
 | `rules/group.go` | call-site updates |
 | `web/web.go` | adds `(*Handler).HTTPHandler`, the mux `Run` serves, so the handler can be mounted in another server instead of being reverse-proxied |
+
+Tests covering the patch itself live in `promql/engine_extra_test.go` and `promql/parser/ast_extra_test.go`.
 
 ## Why it is not upstreamable
 

@@ -192,7 +192,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		return nil, ws, err
 	}
 
-	infoMat := ev.evalSeries(ctx, infoSeries, 0, true)
+	infoMat := ev.evalSeries(ctx, infoSeries, 0, ev.lookbackDelta, true)
 	return infoMat, ws, nil
 }
 

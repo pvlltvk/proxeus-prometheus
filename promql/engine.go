@@ -1573,12 +1573,12 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 // For every storage.Series iterator in series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
-func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
+func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset, lookbackDelta time.Duration, recordOrigT bool) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	mat := make(Matrix, 0, len(series))
 	var prevSS *Series
-	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
+	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(lookbackDelta))
 	var chkIter chunkenc.Iterator
 	for _, s := range series {
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
@@ -1593,7 +1593,7 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
-			origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
+			origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts, lookbackDelta)
 			if !ok {
 				continue
 			}
@@ -2112,7 +2112,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
-		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
+		mat := ev.evalSeries(ctx, e.Series, e.Offset, e.GetLookbackDelta(ev.lookbackDelta), false)
 		return mat, ws
 
 	case *parser.MatrixSelector:
@@ -2264,10 +2264,11 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
 
+	lookbackDelta := vs.GetLookbackDelta(ev.lookbackDelta)
 	seriesIterators := make([]*storage.MemoizedSeriesIterator, len(vs.Series))
 	for i, s := range vs.Series {
 		it := s.Iterator(nil)
-		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
+		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(lookbackDelta)-1)
 	}
 
 	return ev.rangeEval(ctx, nil, func(_ []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
@@ -2281,7 +2282,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		vec := make(Vector, 0, len(vs.Series))
 		for i, s := range vs.Series {
 			it := seriesIterators[i]
-			t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
+			t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts, lookbackDelta)
 			if !ok {
 				continue
 			}
@@ -2305,7 +2306,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 }
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
-func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, offset time.Duration, ts int64) (
+func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, offset time.Duration, ts int64, lookbackDelta time.Duration) (
 	int64, float64, *histogram.FloatHistogram, bool,
 ) {
 	refTime := ts - durationMilliseconds(offset)
@@ -2329,7 +2330,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, of
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
 		t, v, h, ok = it.PeekPrev()
-		if !ok || t <= refTime-durationMilliseconds(ev.lookbackDelta) {
+		if !ok || t <= refTime-durationMilliseconds(lookbackDelta) {
 			return 0, 0, nil, false
 		}
 	}
