@@ -46,7 +46,7 @@ reject it. Carrying it as a fork is the same approach Grafana Mimir takes with
 In proxeus's `go.mod`:
 
 ```
-replace github.com/prometheus/prometheus => github.com/pvlltvk/proxeus-prometheus v0.305.0-proxeus.3
+replace github.com/prometheus/prometheus => github.com/pvlltvk/proxeus-prometheus v0.305.0-proxeus.4
 ```
 
 This fork's own `go.mod` deliberately keeps `module github.com/prometheus/prometheus`. That is required — every internal
@@ -64,7 +64,7 @@ accepts `v0.x`/`v1.x` versions — `v3.5.0` is not a usable module version, whic
 series (product `3.13.1` → module `v0.313.1`).
 
 This fork therefore tags **`v0.3NN.M-proxeus.<n>`**, mirroring the upstream *module* tag it sits on, with a counter for
-revisions of the patch against that same upstream release. Current: `v0.305.0-proxeus.3`, sitting on upstream
+revisions of the patch against that same upstream release. Current: `v0.305.0-proxeus.4`, sitting on upstream
 `v0.305.0` (= product `v3.5.0`, commit `8be3a95`).
 
 ## Rebasing onto a new Prometheus release
