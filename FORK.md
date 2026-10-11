@@ -28,7 +28,7 @@ A short patch series on top of the upstream release tag, touching 8 files:
 | `promql/promqltest/test.go` | call-site updates |
 | `promql/durations_test.go` | call-site updates |
 | `rules/group.go` | call-site updates |
-| `web/web.go` | adds `(*Handler).HTTPHandler`, the mux `Run` serves, so the handler can be mounted in another server instead of being reverse-proxied |
+| `web/web.go` | adds `(*Handler).HTTPHandler`, the mux `Run` serves, so the handler can be mounted in another server instead of being reverse-proxied; adds `Options.StatsRenderer`, passed to the API instead of `nil` |
 
 Tests covering the patch itself live in `promql/engine_extra_test.go` and `promql/parser/ast_extra_test.go`.
 

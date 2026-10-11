@@ -299,6 +299,9 @@ type Options struct {
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
+
+	// StatsRenderer replaces the API's stats rendering; nil keeps the default.
+	StatsRenderer api_v1.StatsRenderer
 }
 
 // New initializes a new web Handler.
@@ -385,7 +388,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		h.options.NotificationsSub,
 		o.Gatherer,
 		o.Registerer,
-		nil,
+		o.StatsRenderer,
 		o.EnableRemoteWriteReceiver,
 		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
